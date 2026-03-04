@@ -3,49 +3,59 @@ import streamlit as st
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Garante que o motor do navegador seja instalado no servidor
+# Instala o navegador no servidor
 os.system("playwright install chromium")
 
-st.set_page_config(page_title="Rancho da Mãe", page_icon="🛒", layout="wide")
-st.title("🛒 Lista de Compras Inteligente - Beltrame")
+st.set_page_config(page_title="Rancho da Mãe", layout="wide")
+st.title("🛒 Lista de Compras - Beltrame")
 
-# Interface limpa para digitar os itens
-lista_texto = st.text_area("Sua Lista de Compras:", placeholder="Digite um item por linha.\nEx: Arroz 5kg\nCebola\nLeite")
+# Texto de exemplo sumindo ao digitar
+lista = st.text_area("Sua Lista:", placeholder="Ex: Cebola\nArroz")
 
 if st.button("Fazer Rancho 🛒"):
-    itens = [i.strip() for i in lista_texto.split('\n') if i.strip()]
-    
+    itens = [i.strip() for i in lista.split('\n') if i.strip()]
     if itens:
-        with st.spinner(f"O robô está no Beltrame procurando {len(itens)} itens..."):
+        with st.spinner("Procurando itens..."):
             try:
                 with sync_playwright() as p:
-                    # Lança o navegador invisível
                     browser = p.chromium.launch(headless=True)
-                    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0")
-                    page = context.new_page()
-                    
-                    resultados_lista = []
-                    valor_total = 0.0
+                    page = browser.new_page()
+                    res, total = [], 0.0
                     
                     for item in itens:
                         try:
-                            # Busca direta para ganhar velocidade
+                            # Busca direta via URL
                             query = urllib.parse.quote(item)
-                            url_busca = f"https://beltramesupermercados.com.br/busca?q={query}"
-                            page.goto(url_busca, wait_until="domcontentloaded", timeout=45000)
+                            page.goto(f"https://beltramesupermercados.com.br/busca?q={query}", timeout=45000)
+                            page.wait_for_timeout(3000) # Espera carregar os preços
                             
-                            # Espera os preços carregarem na tela
-                            page.wait_for_timeout(3000)
+                            corpo = page.locator("body").inner_text()
+                            linhas = [l.strip() for l in corpo.split('\n') if l.strip()]
                             
-                            # Extrai o conteúdo visível para análise
-                            conteudo = page.locator("body").inner_text()
-                            linhas = [l.strip() for l in conteudo.split('\n') if l.strip()]
-                            
-                            item_encontrado = False
+                            achou = False
                             for i, linha in enumerate(linhas):
                                 if 'R$' in linha and any(c.isdigit() for c in linha):
-                                    # Encontrou um preço, agora busca o nome nas linhas próximas
+                                    # Pega o nome do produto que vem logo abaixo do preço
                                     for j in range(i+1, min(i+10, len(linhas))):
-                                        candidato_nome = linhas[j]
-                                        # Filtra termos que não são nomes de produtos
-                                        termos_lixo = ['ofer
+                                        n = linhas[j]
+                                        if 'R$' in n or len(n) < 3 or any(x in n.lower() for x in ['oferta', 'off', '%', 'unidade']):
+                                            continue
+                                        
+                                        # Soma o preço
+                                        try:
+                                            p_limpo = "".join(filter(lambda x: x.isdigit() or x in ",.", linha))
+                                            total += float(p_limpo.replace('.', '').replace(',', '.'))
+                                        except: pass
+                                        
+                                        res.append({"Item": item, "Mercado": n.title(), "Preço": linha})
+                                        achou = True
+                                        break
+                                if achou: break
+                            if not achou: res.append({"Item": item, "Mercado": "Não encontrado", "Preço": "-"})
+                        except: res.append({"Item": item, "Mercado": "Erro na busca", "Preço": "-"})
+                    
+                    browser.close()
+                    st.success(f"✅ Total: **R$ {total:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
+                    st.table(res)
+            except Exception as e:
+                st.error(f"Erro no motor: {e}")
