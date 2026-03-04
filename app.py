@@ -1,10 +1,8 @@
 import streamlit as st
 from playwright.sync_api import sync_playwright
 
-# Configura a aba do navegador
 st.set_page_config(page_title="Comparador de Mercado", page_icon="🛒")
 
-# Interface visual
 st.title("🛒 Leitor de Preços - Teste")
 st.write("Cole o link direto de um produto para testarmos se o site tem bloqueio.")
 
@@ -15,20 +13,19 @@ if st.button("Buscar Dados"):
         with st.spinner("Acessando o mercado disfarçado de humano..."):
             try:
                 with sync_playwright() as p:
-                    # Prepara o navegador invisível
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page()
                     
-                    # Acessa o site e espera carregar
-                    page.goto(url, wait_until="networkidle", timeout=20000)
+                    # Mudamos para 'domcontentloaded' (espera carregar o básico) e aumentamos para 30s
+                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     
-                    # Pega o título da aba do site para provar que entramos
                     title = page.title()
                     
                     st.success(f"✅ Sucesso! Passamos a barreira. Título da página do mercado: {title}")
                     
                     browser.close()
             except Exception as e:
-                st.error("❌ O site bloqueou a leitura ou demorou demais para responder.")
+                # Agora ele vai cuspir o erro real na tela
+                st.error(f"❌ O site barrou ou demorou. O erro real foi: {e}")
     else:
         st.warning("Por favor, cole um link antes de buscar.")
