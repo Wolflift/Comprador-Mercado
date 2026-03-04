@@ -3,72 +3,52 @@ import streamlit as st
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Instalação forçada do navegador
+# Instalação automática do navegador no servidor do Streamlit
 os.system("playwright install chromium")
 
-st.set_page_config(page_title="Rancho da Mãe", layout="wide")
-st.title("🛒 Lista de Compras - Beltrame (Engine V3)")
+st.set_page_config(page_title="Rancho Automático", page_icon="🛒", layout="wide")
+st.title("🛒 Lista de Compras Inteligente - Beltrame")
 
-# Campo de texto limpo
-lista_input = st.text_area("Sua Lista:", placeholder="Cebola\nBatata\nArroz")
+lista_input = st.text_area("Sua Lista de Compras:", placeholder="Digite um item por linha (ex: Arroz 5kg)")
 
-if st.button("Fazer Rancho 🛒"):
+if st.button("Calcular Valor Total 🛒"):
     itens = [i.strip() for i in lista_input.split('\n') if i.strip()]
+    
     if itens:
-        with st.spinner(f"Pesquisando {len(itens)} itens..."):
+        with st.spinner(f"O robô está processando {len(itens)} itens..."):
             try:
                 with sync_playwright() as p:
+                    # Lança o navegador com disfarce humano para evitar bloqueios
                     browser = p.chromium.launch(headless=True)
-                    page = browser.new_page()
-                    res, total_geral = [], 0.0
+                    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0")
+                    page = context.new_page()
+                    
+                    resultados = []
+                    total_compra = 0.0
                     
                     for item in itens:
                         try:
-                            # Busca direta por URL (mais rápido e seguro)
+                            # 1. Busca direta via URL para evitar cliques falhos
                             query = urllib.parse.quote(item)
                             url = f"https://beltramesupermercados.com.br/busca?q={query}"
-                            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                            page.goto(url, wait_until="domcontentloaded", timeout=45000)
                             
-                            # Espera o carregamento dos preços
-                            page.wait_for_selector("text=R$", timeout=10000)
-                            page.wait_for_timeout(2000) # Pausa para renderização
+                            # 2. ESPERA CRÍTICA: Aguarda o símbolo R$ aparecer na tela
+                            # Isso garante que o site já renderizou os preços
+                            page.wait_for_selector("text=R$", timeout=15000)
+                            page.wait_for_timeout(2000) # Pausa técnica de segurança
                             
-                            linhas = [l.strip() for l in page.locator("body").inner_text().split('\n') if l.strip()]
+                            # 3. EXTRAÇÃO: Captura o texto e limpa linhas vazias
+                            conteudo = page.locator("body").inner_text()
+                            linhas = [l.strip() for l in conteudo.split('\n') if l.strip()]
                             
-                            nome_achado, preco_achado = None, None
-                            
+                            item_foi_achado = False
                             for i, linha in enumerate(linhas):
+                                # Se a linha contém o preço
                                 if 'R$' in linha and any(c.isdigit() for c in linha):
-                                    preco_achado = linha
-                                    # BUSCA 360: Procura o nome 3 linhas pra cima e 3 pra baixo
-                                    vizinhos = []
-                                    # Pega índices válidos ao redor do preço
-                                    indices = [i-1, i-2, i-3, i+1, i+2, i+3]
-                                    for idx in indices:
-                                        if 0 <= idx < len(linhas):
-                                            vizinhos.append(linhas[idx])
+                                    preco_raw = linha
+                                    nome_item = "Desconhecido"
                                     
-                                    # Filtra o primeiro vizinho que parece um nome
-                                    for v in vizinhos:
-                                        v_low = v.lower()
-                                        lixo = ['carrinho', 'adicionar', 'lista', 'indisponível', 'r$', 'off', 'ver mais', 'comprar', 'unidade', 'peso']
-                                        if len(v) > 3 and not any(word in v_low for word in lixo):
-                                            nome_achado = v.title()
-                                            break
-                                    if nome_achado: break
-                            
-                            if nome_achado:
-                                res.append({"Busca": item, "Produto": nome_achado, "Preço": preco_achado})
-                                # Soma matemática
-                                p_limpo = "".join(filter(lambda x: x.isdigit() or x in ",.", preco_achado))
-                                total_geral += float(p_limpo.replace('.', '').replace(',', '.'))
-                            else:
-                                res.append({"Busca": item, "Produto": "Não identificado", "Preço": "-"})
-                        except:
-                            res.append({"Busca": item, "Produto": "Erro/Esgotado", "Preço": "-"})
-                    
-                    browser.close()
-                    st.success(f"✅ Compra Finalizada! Total: **R$ {total_geral:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
-                    st.table(res)
-            except Exception as e:
-                st.error(f"Falha no motor: {e}")
+                                    # BUSCA 360: Procura o nome nas 5 linhas acima E 5 abaixo
+                                    # Isso resolve o problema de o layout mudar na busca
+                                    indices_vizinhos = [i-1,
