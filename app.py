@@ -9,7 +9,7 @@ os.system("playwright install chromium")
 st.set_page_config(page_title="Sistema de Compras Pro", layout="wide")
 st.title("🛒 Engine V10 - Seleção por Escopo (Beltrame)")
 
-# Entrada de dados
+# Interface para entrada da lista
 lista_txt = st.text_area("Digite sua lista (um por linha):", placeholder="Cebola\nArroz\nFeijão")
 
 if st.button("Executar Busca Profissional 🚀"):
@@ -41,7 +41,7 @@ if st.button("Executar Busca Profissional 🚀"):
                             page.wait_for_timeout(2000) # Estabilização final
 
                             # 4. A MÁGICA DO DOM: O robô isola os blocos (cards) de produtos.
-                            # Retorna apenas o texto de cada 'quadrado' de produto individualmente.
+                            # Isso evita que ele pegue textos de outros produtos ou do menu.
                             cards_data = page.evaluate("""
                                 () => {
                                     return Array.from(document.querySelectorAll('div, section, article'))
@@ -51,4 +51,43 @@ if st.button("Executar Busca Profissional 🚀"):
                             """)
 
                             if cards_data:
-                                # Analisamos
+                                # Analisamos o primeiro card (resultado mais relevante)
+                                bloco_texto = cards_data[0]
+                                linhas = [l.strip() for l in bloco_texto.split('\n') if l.strip()]
+                                
+                                nome_encontrado, preco_encontrado = None, None
+                                
+                                for i, linha in enumerate(linhas):
+                                    if 'R$' in linha and any(c.isdigit() for c in linha):
+                                        preco_encontrado = linha
+                                        # Busca o nome ao redor do preço DENTRO do card (cima ou baixo)
+                                        for j in [i+1, i+2, i-1, i-2]:
+                                            if 0 <= j < len(linhas):
+                                                cand = linhas[j]
+                                                lixo = ['oferta', 'off', '%', 'unidade', 'peso', 'adicionar', 'comprar']
+                                                if len(cand) > 3 and 'R$' not in cand and not any(x in cand.lower() for x in lixo):
+                                                    nome_encontrado = cand.title()
+                                                    break
+                                        break
+
+                                if nome_encontrado and preco_encontrado:
+                                    # Limpeza e soma matemática para evitar Total: R$ 0,00
+                                    val_limpo = "".join(filter(lambda x: x.isdigit() or x in ",.", preco_encontrado))
+                                    total_geral += float(val_limpo.replace('.', '').replace(',', '.'))
+                                    res.append({"Status": "✅", "Busca": item, "Produto": nome_encontrado, "Preço": preco_encontrado})
+                                else:
+                                    res.append({"Status": "⚠️", "Busca": item, "Produto": "Dados incompletos", "Preço": "-"})
+                            else:
+                                res.append({"Status": "❌", "Busca": item, "Produto": "Não encontrado", "Preço": "-"})
+
+                        except Exception:
+                            res.append({"Status": "❌", "Busca": item, "Produto": "Erro/Timeout", "Preço": "-"})
+                    
+                    browser.close()
+                    
+                    # Exibição dos resultados formatados
+                    st.success(f"✅ Rancho Calculado: **R$ {total_geral:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
+                    st.table(res)
+
+            except Exception as e:
+                st.error(f"Falha técnica no motor: {e}")
