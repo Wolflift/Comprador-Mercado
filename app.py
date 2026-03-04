@@ -3,13 +3,13 @@ import streamlit as st
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Instalação do motor de navegação no servidor
+# Instalação mandatória do motor de navegação
 os.system("playwright install chromium")
 
 st.set_page_config(page_title="Sistema de Compras Pro", layout="wide")
-st.title("🛒 Engine V10 - Seleção por Escopo (Beltrame)")
+st.title("🛒 Engine V11 - Estabilidade Total")
 
-# Interface para entrada da lista
+# Interface de entrada
 lista_txt = st.text_area("Digite sua lista (um por linha):", placeholder="Cebola\nArroz\nFeijão")
 
 if st.button("Executar Busca Profissional 🚀"):
@@ -18,10 +18,10 @@ if st.button("Executar Busca Profissional 🚀"):
         with st.spinner("Mapeando componentes e isolando produtos..."):
             try:
                 with sync_playwright() as p:
-                    # Lançamento do navegador com disfarce de usuário real
+                    # Lançamento do navegador com disfarce atualizado
                     browser = p.chromium.launch(headless=True)
                     context = browser.new_context(
-                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0"
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0"
                     )
                     page = context.new_page()
                     
@@ -33,15 +33,15 @@ if st.button("Executar Busca Profissional 🚀"):
                             query = urllib.parse.quote(item)
                             url = f"https://beltramesupermercados.com.br/busca?q={query}"
                             
-                            # 2. Navegação com espera de carregamento do DOM
-                            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                            # 2. Navegação com timeout estendido para evitar o erro de Timeout
+                            page.goto(url, wait_until="domcontentloaded", timeout=45000)
                             
-                            # 3. Sincronismo: aguarda o elemento de preço aparecer
-                            page.wait_for_selector("text=R$", timeout=10000)
-                            page.wait_for_timeout(2000) # Estabilização final
+                            # 3. Sincronismo: aguarda o elemento de preço (R$) carregar
+                            # Aumentei para 15s para garantir que sites lentos respondam
+                            page.wait_for_selector("text=R$", timeout=15000)
+                            page.wait_for_timeout(2000)
 
-                            # 4. A MÁGICA DO DOM: O robô isola os blocos (cards) de produtos.
-                            # Isso evita que ele pegue textos de outros produtos ou do menu.
+                            # 4. Mapeamento via DOM: Isola os cards de produtos
                             cards_data = page.evaluate("""
                                 () => {
                                     return Array.from(document.querySelectorAll('div, section, article'))
@@ -51,7 +51,8 @@ if st.button("Executar Busca Profissional 🚀"):
                             """)
 
                             if cards_data:
-                                # Analisamos o primeiro card (resultado mais relevante)
+                                # Analisamos o primeiro resultado (mais relevante)
+                                # Indentação corrigida conforme feedback
                                 bloco_texto = cards_data[0]
                                 linhas = [l.strip() for l in bloco_texto.split('\n') if l.strip()]
                                 
@@ -60,10 +61,11 @@ if st.button("Executar Busca Profissional 🚀"):
                                 for i, linha in enumerate(linhas):
                                     if 'R$' in linha and any(c.isdigit() for c in linha):
                                         preco_encontrado = linha
-                                        # Busca o nome ao redor do preço DENTRO do card (cima ou baixo)
-                                        for j in [i+1, i+2, i-1, i-2]:
-                                            if 0 <= j < len(linhas):
-                                                cand = linhas[j]
+                                        # Busca o nome num raio de 4 linhas ao redor do preço
+                                        vizinhos = [i-1, i-2, i+1, i+2]
+                                        for idx in vizinhos:
+                                            if 0 <= idx < len(linhas):
+                                                cand = linhas[idx]
                                                 lixo = ['oferta', 'off', '%', 'unidade', 'peso', 'adicionar', 'comprar']
                                                 if len(cand) > 3 and 'R$' not in cand and not any(x in cand.lower() for x in lixo):
                                                     nome_encontrado = cand.title()
@@ -71,7 +73,7 @@ if st.button("Executar Busca Profissional 🚀"):
                                         break
 
                                 if nome_encontrado and preco_encontrado:
-                                    # Limpeza e soma matemática para evitar Total: R$ 0,00
+                                    # Limpeza de string e soma matemática
                                     val_limpo = "".join(filter(lambda x: x.isdigit() or x in ",.", preco_encontrado))
                                     total_geral += float(val_limpo.replace('.', '').replace(',', '.'))
                                     res.append({"Status": "✅", "Busca": item, "Produto": nome_encontrado, "Preço": preco_encontrado})
@@ -81,11 +83,12 @@ if st.button("Executar Busca Profissional 🚀"):
                                 res.append({"Status": "❌", "Busca": item, "Produto": "Não encontrado", "Preço": "-"})
 
                         except Exception:
+                            # Captura de falhas individuais por item
                             res.append({"Status": "❌", "Busca": item, "Produto": "Erro/Timeout", "Preço": "-"})
                     
                     browser.close()
                     
-                    # Exibição dos resultados formatados
+                    # Exibição dos resultados finais
                     st.success(f"✅ Rancho Calculado: **R$ {total_geral:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
                     st.table(res)
 
