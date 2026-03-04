@@ -3,66 +3,72 @@ import streamlit as st
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Instala o navegador no servidor
+# Instalação forçada do navegador
 os.system("playwright install chromium")
 
 st.set_page_config(page_title="Rancho da Mãe", layout="wide")
-st.title("🛒 Lista de Compras Inteligente - Beltrame")
+st.title("🛒 Lista de Compras - Beltrame (Engine V3)")
 
-lista = st.text_area("Sua Lista:", placeholder="Ex: Cebola\nArroz")
+# Campo de texto limpo
+lista_input = st.text_area("Sua Lista:", placeholder="Cebola\nBatata\nArroz")
 
 if st.button("Fazer Rancho 🛒"):
-    itens = [i.strip() for i in lista.split('\n') if i.strip()]
+    itens = [i.strip() for i in lista_input.split('\n') if i.strip()]
     if itens:
-        with st.spinner("O robô está procurando item por item..."):
+        with st.spinner(f"Pesquisando {len(itens)} itens..."):
             try:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page()
-                    res, total = [], 0.0
+                    res, total_geral = [], 0.0
                     
                     for item in itens:
                         try:
-                            # 1. Vai direto para o link de busca
+                            # Busca direta por URL (mais rápido e seguro)
                             query = urllib.parse.quote(item)
                             url = f"https://beltramesupermercados.com.br/busca?q={query}"
-                            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                            page.goto(url, wait_until="domcontentloaded", timeout=30000)
                             
-                            # 2. ESPERA CRÍTICA: Aguarda o símbolo de real (R$) aparecer de verdade
-                            # Se em 15 segundos não aparecer, ele considera que não tem o item
-                            page.wait_for_selector("text=R$", timeout=15000)
-                            page.wait_for_timeout(2000) # Pausa extra para carregar nomes
+                            # Espera o carregamento dos preços
+                            page.wait_for_selector("text=R$", timeout=10000)
+                            page.wait_for_timeout(2000) # Pausa para renderização
                             
-                            corpo = page.locator("body").inner_text()
-                            linhas = [l.strip() for l in corpo.split('\n') if l.strip()]
+                            linhas = [l.strip() for l in page.locator("body").inner_text().split('\n') if l.strip()]
                             
-                            achou = False
+                            nome_achado, preco_achado = None, None
+                            
                             for i, linha in enumerate(linhas):
                                 if 'R$' in linha and any(c.isdigit() for c in linha):
-                                    # Procura o nome nas 10 linhas abaixo do preço
-                                    for j in range(i+1, min(i+11, len(linhas))):
-                                        n = linhas[j]
-                                        # Filtros para ignorar lixo visual (botões, descontos)
-                                        if 'R$' in n or len(n) < 3 or any(x in n.lower() for x in ['oferta', 'off', '%', 'unidade', 'peso', 'adicionar']):
-                                            continue
-                                        
-                                        # Processa o preço e soma
-                                        try:
-                                            p_limpo = "".join(filter(lambda x: x.isdigit() or x in ",.", linha))
-                                            total += float(p_limpo.replace('.', '').replace(',', '.'))
-                                        except: pass
-                                        
-                                        res.append({"Item": item, "Mercado": n.title(), "Preço": linha})
-                                        achou = True
-                                        break
-                                if achou: break
-                            if not achou: res.append({"Item": item, "Mercado": "Não encontrado", "Preço": "-"})
-                        except: 
-                            res.append({"Item": item, "Mercado": "Esgotado ou Erro", "Preço": "-"})
+                                    preco_achado = linha
+                                    # BUSCA 360: Procura o nome 3 linhas pra cima e 3 pra baixo
+                                    vizinhos = []
+                                    # Pega índices válidos ao redor do preço
+                                    indices = [i-1, i-2, i-3, i+1, i+2, i+3]
+                                    for idx in indices:
+                                        if 0 <= idx < len(linhas):
+                                            vizinhos.append(linhas[idx])
+                                    
+                                    # Filtra o primeiro vizinho que parece um nome
+                                    for v in vizinhos:
+                                        v_low = v.lower()
+                                        lixo = ['carrinho', 'adicionar', 'lista', 'indisponível', 'r$', 'off', 'ver mais', 'comprar', 'unidade', 'peso']
+                                        if len(v) > 3 and not any(word in v_low for word in lixo):
+                                            nome_achado = v.title()
+                                            break
+                                    if nome_achado: break
+                            
+                            if nome_achado:
+                                res.append({"Busca": item, "Produto": nome_achado, "Preço": preco_achado})
+                                # Soma matemática
+                                p_limpo = "".join(filter(lambda x: x.isdigit() or x in ",.", preco_achado))
+                                total_geral += float(p_limpo.replace('.', '').replace(',', '.'))
+                            else:
+                                res.append({"Busca": item, "Produto": "Não identificado", "Preço": "-"})
+                        except:
+                            res.append({"Busca": item, "Produto": "Erro/Esgotado", "Preço": "-"})
                     
                     browser.close()
-                    # Mostra o total com formatação de moeda
-                    st.success(f"✅ Total Estimado: **R$ {total:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
+                    st.success(f"✅ Compra Finalizada! Total: **R$ {total_geral:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
                     st.table(res)
             except Exception as e:
-                st.error(f"Erro no motor: {e}")
+                st.error(f"Falha no motor: {e}")
