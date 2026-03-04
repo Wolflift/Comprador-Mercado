@@ -4,7 +4,6 @@ from playwright.sync_api import sync_playwright
 
 os.system("playwright install chromium")
 
-# Layout mais largo para caber a tabela
 st.set_page_config(page_title="Comparador de Mercado", page_icon="🛒", layout="wide")
 
 st.title("🛒 Extrator de Preços - Beltrame")
@@ -14,47 +13,54 @@ url = st.text_input("Link do Mercado:")
 
 if st.button("Extrair Produtos"):
     if url:
-        with st.spinner("Lendo as prateleiras e anotando os preços... isso leva cerca de 20 segundos."):
+        with st.spinner("Lendo as prateleiras e anotando os preços com a nova lógica..."):
             try:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page()
                     
                     page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                    
-                    # Agora o robô só prossegue quando enxergar um "R$" na tela
                     page.wait_for_selector("text=R$", timeout=15000)
                     
-                    # Pega todo o texto escrito na tela do mercado
                     text_content = page.locator("body").inner_text()
                     lines = [line.strip() for line in text_content.split('\n') if line.strip()]
                     
-                    produtos = []
+                    produtos_dict = {}
                     
-                    # Varre as linhas procurando preços e nomes
                     for i, line in enumerate(lines):
                         if 'R$' in line and any(c.isdigit() for c in line):
                             preco = line
-                            nome = "Desconhecido"
+                            nome = None
                             
-                            # Olha para cima para achar o nome, ignorando lixo
-                            for j in range(i-1, -1, -1):
-                                text_prev = lines[j].lower()
-                                ignore_words = ['carrinho', 'adicionar', 'lista', 'indisponível', 'r$', 'off', 'ver mais', 'comprar']
-                                if not any(word in text_prev for word in ignore_words):
-                                    nome = lines[j]
+                            # O robô agora olha para as próximas 5 linhas ABAIXO do preço
+                            for j in range(i + 1, min(i + 6, len(lines))):
+                                next_line = lines[j].strip()
+                                
+                                # Se achar outro preço logo em seguida, o preço atual era o "riscado" (antigo). Ignoramos.
+                                if 'R$' in next_line:
+                                    break
+                                    
+                                # Ignora botões e etiquetas de desconto (como "Peso", "Unidade", "-26%")
+                                ignore_list = ['peso', 'unidade', 'adicionar', 'comprar', 'oferta', 'off']
+                                if next_line.lower() in ignore_list or next_line.startswith('-') or next_line.endswith('%'):
+                                    continue
+                                    
+                                # Se passou nos filtros, é o nome verdadeiro do produto!
+                                if len(next_line) > 3:
+                                    nome = next_line
                                     break
                             
-                            # Filtro para evitar linhas curtas e produtos duplicados
-                            if len(nome) > 3:
-                                if not any(p['Produto'] == nome.title() for p in produtos):
-                                    produtos.append({"Produto": nome.title(), "Preço": preco})
+                            if nome:
+                                # Salva no dicionário (isso também evita produtos duplicados)
+                                produtos_dict[nome.title()] = preco
                     
                     browser.close()
                     
+                    # Converte nosso dicionário para o formato da tabela
+                    produtos = [{"Produto": k, "Preço": v} for k, v in produtos_dict.items()]
+                    
                     if produtos:
-                        st.success(f"✅ Sensacional! O robô anotou {len(produtos)} produtos nesta página.")
-                        # Transforma a nossa lista em uma tabela interativa!
+                        st.success(f"✅ Sensacional! O robô anotou {len(produtos)} produtos corretamente desta vez.")
                         st.dataframe(produtos, use_container_width=True)
                     else:
                         st.warning("Não conseguimos identificar os produtos. O layout pode ser muito diferente.")
