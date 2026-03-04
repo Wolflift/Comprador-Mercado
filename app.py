@@ -10,7 +10,7 @@ st.title("🛒 Lista de Compras Inteligente")
 st.write("Digite sua lista abaixo (um item por linha). O robô vai pesquisar tudo no Beltrame e montar seu carrinho.")
 
 # Trocamos o campo de link por uma caixa de texto grande!
-lista_texto = st.text_area("Sua Lista de Compras:", "Cebola\nBatata\nLeite Integral\nCafé")
+lista_texto = st.text_area("Sua Lista de Compras:", placeholder="Ex: Arroz 5kg\nFeijão\nLeite...")
 
 if st.button("Fazer Rancho 🛒"):
     # Limpa as linhas vazias e cria uma lista real de itens
