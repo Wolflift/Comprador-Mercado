@@ -3,60 +3,52 @@ import streamlit as st
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Instala o navegador no servidor do Streamlit
+# Instalação do motor de navegação no servidor
 os.system("playwright install chromium")
 
-st.set_page_config(page_title="Rancho Automático", layout="wide")
-st.title("🛒 Lista de Compras - Beltrame")
+st.set_page_config(page_title="Sistema de Compras Pro", layout="wide")
+st.title("🛒 Engine V10 - Seleção por Escopo (Beltrame)")
 
-lista_txt = st.text_area("Sua Lista:", placeholder="Ex: Cebola\nArroz")
+# Entrada de dados
+lista_txt = st.text_area("Digite sua lista (um por linha):", placeholder="Cebola\nArroz\nFeijão")
 
-if st.button("Fazer Rancho 🛒"):
+if st.button("Executar Busca Profissional 🚀"):
     itens = [i.strip() for i in lista_txt.split('\n') if i.strip()]
     if itens:
-        with st.spinner(f"Pesquisando {len(itens)} itens..."):
+        with st.spinner("Mapeando componentes e isolando produtos..."):
             try:
                 with sync_playwright() as p:
+                    # Lançamento do navegador com disfarce de usuário real
                     browser = p.chromium.launch(headless=True)
-                    page = browser.new_page()
-                    res, total = [], 0.0
+                    context = browser.new_context(
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0"
+                    )
+                    page = context.new_page()
                     
+                    res, total_geral = [], 0.0
+
                     for item in itens:
                         try:
+                            # 1. Geração da URL de busca
                             query = urllib.parse.quote(item)
                             url = f"https://beltramesupermercados.com.br/busca?q={query}"
                             
-                            # Vai para a busca e aguarda o carregamento básico
-                            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                            # 2. Navegação com espera de carregamento do DOM
+                            page.goto(url, wait_until="domcontentloaded", timeout=30000)
                             
-                            # ESPERA FORÇADA: 5 segundos para o JavaScript do site carregar os preços
-                            page.wait_for_timeout(5000)
-                            
-                            linhas = [l.strip() for l in page.locator("body").inner_text().split('\n') if l.strip()]
-                            
-                            achou = False
-                            for i, linha in enumerate(linhas):
-                                if 'R$' in linha and any(c.isdigit() for c in linha):
-                                    # Procura o nome nas 5 linhas vizinhas (cima ou baixo)
-                                    vizinhos = linhas[max(0, i-5):min(len(linhas), i+6)]
-                                    for v in vizinhos:
-                                        v_low = v.lower()
-                                        lixo = ['carrinho','adicionar','lista','r$','off','comprar','unidade','peso','oferta']
-                                        if len(v) > 3 and not any(w in v_low for w in lixo):
-                                            # Sucesso: Limpa preço e soma
-                                            p_limpo = "".join(filter(lambda x: x.isdigit() or x in ",.", linha))
-                                            total += float(p_limpo.replace('.', '').replace(',', '.'))
-                                            res.append({"Busca": item, "Produto": v.title(), "Preço": linha})
-                                            achou = True
-                                            break
-                                    if achou: break
-                            if not achou:
-                                res.append({"Busca": item, "Produto": "Não encontrado", "Preço": "-"})
-                        except:
-                            res.append({"Busca": item, "Produto": "Erro na conexão", "Preço": "-"})
-                    
-                    browser.close()
-                    st.success(f"✅ Total Estimado: **R$ {total:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
-                    st.table(res)
-            except Exception as e:
-                st.error(f"Falha no motor: {e}")
+                            # 3. Sincronismo: aguarda o elemento de preço aparecer
+                            page.wait_for_selector("text=R$", timeout=10000)
+                            page.wait_for_timeout(2000) # Estabilização final
+
+                            # 4. A MÁGICA DO DOM: O robô isola os blocos (cards) de produtos.
+                            # Retorna apenas o texto de cada 'quadrado' de produto individualmente.
+                            cards_data = page.evaluate("""
+                                () => {
+                                    return Array.from(document.querySelectorAll('div, section, article'))
+                                        .filter(el => el.innerText.includes('R$') && el.innerText.length < 300)
+                                        .map(el => el.innerText);
+                                }
+                            """)
+
+                            if cards_data:
+                                # Analisamos
