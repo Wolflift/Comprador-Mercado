@@ -3,52 +3,60 @@ import streamlit as st
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Instalação automática do navegador no servidor do Streamlit
+# Instala o navegador no servidor do Streamlit
 os.system("playwright install chromium")
 
-st.set_page_config(page_title="Rancho Automático", page_icon="🛒", layout="wide")
-st.title("🛒 Lista de Compras Inteligente - Beltrame")
+st.set_page_config(page_title="Rancho Automático", layout="wide")
+st.title("🛒 Lista de Compras - Beltrame")
 
-lista_input = st.text_area("Sua Lista de Compras:", placeholder="Digite um item por linha (ex: Arroz 5kg)")
+lista_txt = st.text_area("Sua Lista:", placeholder="Ex: Cebola\nArroz")
 
-if st.button("Calcular Valor Total 🛒"):
-    itens = [i.strip() for i in lista_input.split('\n') if i.strip()]
-    
+if st.button("Fazer Rancho 🛒"):
+    itens = [i.strip() for i in lista_txt.split('\n') if i.strip()]
     if itens:
-        with st.spinner(f"O robô está processando {len(itens)} itens..."):
+        with st.spinner(f"Pesquisando {len(itens)} itens..."):
             try:
                 with sync_playwright() as p:
-                    # Lança o navegador com disfarce humano para evitar bloqueios
                     browser = p.chromium.launch(headless=True)
-                    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0")
-                    page = context.new_page()
-                    
-                    resultados = []
-                    total_compra = 0.0
+                    page = browser.new_page()
+                    res, total = [], 0.0
                     
                     for item in itens:
                         try:
-                            # 1. Busca direta via URL para evitar cliques falhos
                             query = urllib.parse.quote(item)
                             url = f"https://beltramesupermercados.com.br/busca?q={query}"
+                            
+                            # Vai para a busca e aguarda o carregamento básico
                             page.goto(url, wait_until="domcontentloaded", timeout=45000)
                             
-                            # 2. ESPERA CRÍTICA: Aguarda o símbolo R$ aparecer na tela
-                            # Isso garante que o site já renderizou os preços
-                            page.wait_for_selector("text=R$", timeout=15000)
-                            page.wait_for_timeout(2000) # Pausa técnica de segurança
+                            # ESPERA FORÇADA: 5 segundos para o JavaScript do site carregar os preços
+                            page.wait_for_timeout(5000)
                             
-                            # 3. EXTRAÇÃO: Captura o texto e limpa linhas vazias
-                            conteudo = page.locator("body").inner_text()
-                            linhas = [l.strip() for l in conteudo.split('\n') if l.strip()]
+                            linhas = [l.strip() for l in page.locator("body").inner_text().split('\n') if l.strip()]
                             
-                            item_foi_achado = False
+                            achou = False
                             for i, linha in enumerate(linhas):
-                                # Se a linha contém o preço
                                 if 'R$' in linha and any(c.isdigit() for c in linha):
-                                    preco_raw = linha
-                                    nome_item = "Desconhecido"
-                                    
-                                    # BUSCA 360: Procura o nome nas 5 linhas acima E 5 abaixo
-                                    # Isso resolve o problema de o layout mudar na busca
-                                    indices_vizinhos = [i-1,
+                                    # Procura o nome nas 5 linhas vizinhas (cima ou baixo)
+                                    vizinhos = linhas[max(0, i-5):min(len(linhas), i+6)]
+                                    for v in vizinhos:
+                                        v_low = v.lower()
+                                        lixo = ['carrinho','adicionar','lista','r$','off','comprar','unidade','peso','oferta']
+                                        if len(v) > 3 and not any(w in v_low for w in lixo):
+                                            # Sucesso: Limpa preço e soma
+                                            p_limpo = "".join(filter(lambda x: x.isdigit() or x in ",.", linha))
+                                            total += float(p_limpo.replace('.', '').replace(',', '.'))
+                                            res.append({"Busca": item, "Produto": v.title(), "Preço": linha})
+                                            achou = True
+                                            break
+                                    if achou: break
+                            if not achou:
+                                res.append({"Busca": item, "Produto": "Não encontrado", "Preço": "-"})
+                        except:
+                            res.append({"Busca": item, "Produto": "Erro na conexão", "Preço": "-"})
+                    
+                    browser.close()
+                    st.success(f"✅ Total Estimado: **R$ {total:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
+                    st.table(res)
+            except Exception as e:
+                st.error(f"Falha no motor: {e}")
