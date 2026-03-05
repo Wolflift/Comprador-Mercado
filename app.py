@@ -91,7 +91,7 @@ with st.sidebar:
                                         'cafés, chás e achocolatados', 'açúcares e adoçantes', 'óleos', 
                                         'azeites', 'sopas instantâneas', 'cremes prontos', 'farináceos', 
                                         'massas', 'grãos, arrozes e feijões', 'snacks', 'bomboniere', 
-                                        'salgadinhos', 'biscoitos', 'íntimos', 'banho', 'higiene'
+                                        'salgadinhos', 'biscoitos', 'íntimos', 'banho', 'higiene' , 'Pratos Prontos'
                                     ]
 
                                     for j in range(i-1, i-9, -1):
