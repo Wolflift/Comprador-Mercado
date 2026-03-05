@@ -100,41 +100,4 @@ with st.sidebar:
                                     nome_item = "Desconhecido"
                                     
                                     # Sobe do preço até a trava de segurança do item anterior [Conversa]
-                                    for j in range(i-1, max(-1, ultimo_i_nome), -1):
-                                        txt = lines[j].strip()
-                                        txt_low = txt.lower()
-                                        
-                                        # Regra: Deve ter letras, não ter R$, não ser ruído e tamanho mínimo [6, 7]
-                                        if any(c.isalpha() for c in txt) and 'R$' not in txt and len(txt) > 3:
-                                            if txt_low not in ruido_set:
-                                                nome_item = txt
-                                                ultimo_i_nome = j 
-                                                break
-                                    
-                                    if nome_item != "Desconhecido":
-                                        base_temp.append({
-                                            "Categoria": nome_cat,
-                                            "Produto": nome_item.title(),
-                                            "Preço Cheio": p_cheio,
-                                            "Menor Valor": p_promo
-                                        })
-                                    if pula_proximo: i += 1 
-                                i += 1
-                        except: i += 1; continue
-
-                    st.session_state.base_produtos = base_temp
-                    browser.close()
-                    st.success(f"✅ Coleta finalizada: {len(base_temp)} itens alinhados e filtrados.")
-            except Exception as e:
-                st.error(f"Erro: {e}")
-
-# EXIBIÇÃO ESTÁVEL COM PANDAS E ARROW [Conversa]
-if st.session_state.base_produtos:
-    st.divider()
-    df = pd.DataFrame(st.session_state.base_produtos).astype(str)
-    busca = st.text_input("🔍 Pesquisar na base limpa:").strip().lower()
-    if busca:
-        res = df[df['Produto'].str.lower().str.contains(busca)]
-        st.table(res) if not res.empty else st.warning("Não encontrado.")
-    else:
-        st.dataframe(df, use_container_width=True)
+                                    for j in range(i-1, max(-1, ultimo
