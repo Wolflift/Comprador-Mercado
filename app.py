@@ -1,64 +1,56 @@
 import os
 import streamlit as st
+import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Instalação mandatória do navegador no servidor
+# Instalação do navegador no servidor
 os.system("playwright install chromium")
 
-st.set_page_config(page_title="Sistema de Compras", layout="wide")
-st.title("🛒 Engine V23 - Navegação e Sessão Real")
+st.set_page_config(page_title="Comprador de Mercado", layout="wide")
+st.title("🛒 Engine Final - Estabilidade Total")
 
-lista_txt = st.text_area("Sua Lista:", placeholder="Cebola\nCenoura\nBatata")
+lista_txt = st.text_area("Lista de Compras:", placeholder="Cebola\nArroz")
 
-if st.button("Executar Busca Profissional 🚀"):
+if st.button("Executar Busca 🚀"):
     itens = [i.strip() for i in lista_txt.split('\n') if i.strip()]
     if itens:
-        with st.spinner("Validando acesso e buscando produtos..."):
+        with st.spinner("Processando..."):
             try:
                 with sync_playwright() as p:
-                    # Lançamento com disfarce de navegador Chrome atualizado
+                    # Lançamento com disfarce de usuário real
                     browser = p.chromium.launch(headless=True)
                     context = browser.new_context(
-                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0",
-                        viewport={'width': 1280, 'height': 800}
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0"
                     )
                     page = context.new_page()
 
-                    # 1. PASSO CRÍTICO: ACESSO E BYPASS DO BLOQUEIO
+                    # 1. ACESSO INICIAL E BYPASS DO MODAL DE LOJA (image_abebbf.jpg)
                     page.goto("https://beltramesupermercados.com.br", wait_until="domcontentloaded")
-                    
                     try:
-                        # Clica no botão de confirmar loja visto no diagnóstico
-                        btn = page.locator("button:has-text('Confirmar')")
-                        if btn.is_visible(timeout=8000):
-                            btn.click()
+                        # Tenta clicar no botão 'Confirmar' do modal de localização
+                        btn_confirmar = page.get_by_role("button", name="Confirmar")
+                        if btn_confirmar.is_visible(timeout=5000):
+                            btn_confirmar.click()
                             page.wait_for_timeout(2000)
                     except:
+                        # Se o modal não aparecer (já salvo em cookie), ele segue
                         pass
 
                     res, total_geral = [], 0.0
 
                     for item in itens:
                         try:
-                            # 2. USA A BARRA DE BUSCA (Mais estável que URL direta)
-                            # Placeholder extraído da imagem: 'Leite, arroz, pão, vinho, frutas...'
-                            campo = page.get_by_placeholder("Leite, arroz, pão, vinho, frutas...")
-                            campo.fill(item)
-                            page.keyboard.press("Enter")
+                            # 2. BUSCA INDIVIDUAL POR URL
+                            query = urllib.parse.quote(item)
+                            url = f"https://beltramesupermercados.com.br/busca?q={query}"
+                            page.goto(url, wait_until="load", timeout=30000)
                             
-                            # 3. ESPERA O CONTEÚDO (Garante que o preço 'nasceu' na tela)
-                            page.wait_for_selector("text=R$", timeout=15000)
-                            page.wait_for_timeout(3000)
+                            # 3. ESPERA PELO CONTEÚDO (R$ é o sinalizador visual da prateleira)
+                            page.wait_for_selector("text=R$", timeout=10000)
+                            page.wait_for_timeout(2000)
 
-                            # 4. EXTRAÇÃO POR ESCOPO (Isolamento de Card)
-                            dados = page.evaluate("""
+                            # 4. EXTRAÇÃO ROBUSTA VIA JAVASCRIPT (Isolamento de Card)
+                            # Pega o texto de cada card para não misturar nomes e preços
+                            card_text = page.evaluate("""
                                 () => {
-                                    const cards = Array.from(document.querySelectorAll('div, section, article'))
-                                        .filter(el => el.innerText.includes('R$') && el.innerText.length < 400);
-                                    return cards.length > 0 ? cards[0].innerText : null;
-                                }
-                            """)
-
-                            if dados:
-                                linhas = [l.strip() for l in dados.split('\n') if l.strip()]
-                                p_enc, n_enc = None, "Item"
+                                    const cards = Array.from(document.querySelectorAll('div,
