@@ -2,12 +2,12 @@ import os
 import streamlit as st
 from playwright.sync_api import sync_playwright
 
-# Instalação mandatória do navegador no servidor do Streamlit
+# Instalação mandatória do navegador no servidor
 os.system("playwright install chromium")
 
-st.set_page_config(page_title="Sistema Pro Beltrame", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="Sistema ETL Beltrame Pro", page_icon="🛒", layout="wide")
 
-# Mapeamento sistematizado das 10 URLs [Histórico]
+# Mapeamento das 10 URLs fornecidas [Histórico]
 CATEGORIAS = {
     "Promoções": "https://beltramesupermercados.com.br/promocoes",
     "Mercearia": "https://beltramesupermercados.com.br/categorias/mercearia",
@@ -21,7 +21,7 @@ CATEGORIAS = {
     "Peixes e Frutos do Mar": "https://beltramesupermercados.com.br/categorias/peixes-e-frutos-do-mar"
 }
 
-st.title("🛒 Engine Beltrame - Extração de Produtos Real")
+st.title("🛒 Engine Beltrame - Inteligência em Promoções")
 
 if 'base_produtos' not in st.session_state:
     st.session_state.base_produtos = []
@@ -29,14 +29,14 @@ if 'base_produtos' not in st.session_state:
 with st.sidebar:
     st.header("⚙️ Painel de Controle")
     if st.button("🚀 Iniciar Extração Geral"):
-        with st.spinner("Limpando prateleiras e organizando a base local..."):
+        with st.spinner("Limpando prateleiras e processando promoções..."):
             try:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     context = browser.new_context(user_agent="Mozilla/5.0")
                     page = context.new_page()
 
-                    # Resolve o popup de loja (Sistematização de tarefa repetitiva) [4]
+                    # Resolver o popup de loja inicial [Histórico]
                     page.goto("https://beltramesupermercados.com.br", wait_until="domcontentloaded")
                     try:
                         btn = page.get_by_role("button", name="Confirmar", exact=False)
@@ -52,29 +52,43 @@ with st.sidebar:
                             page.wait_for_selector("text=R$", timeout=15000)
                             
                             text_content = page.locator("body").inner_text()
-                            # Manipulação de strings: quebra o texto em linhas limpas [5-7]
                             lines = [l.strip() for l in text_content.split('\n') if l.strip()]
                             
                             for i, line in enumerate(lines):
                                 if 'R$' in line and any(c.isdigit() for c in line):
+                                    
+                                    # --- NOVA LÓGICA PARA PROMOÇÕES ---
+                                    # Verifica se há outro preço nas próximas 3 linhas (indicando que este é o valor "DE")
+                                    tem_outro_preco_depois = False
+                                    for k in range(i + 1, min(i + 4, len(lines))):
+                                        if 'R$' in lines[k] and any(c.isdigit() for c in lines[k]):
+                                            tem_outro_preco_depois = True
+                                            break
+                                    
+                                    if tem_outro_preco_depois:
+                                        continue # Ignora este valor, pois ele é apenas o preço original (caro)
+
+                                    # Se não houver outro preço à frente, este é o preço final (com desconto)
                                     preco = line
                                     nome_prod = "Desconhecido"
                                     
-                                    # LÓGICA DE FILTRAGEM REFINADA (Sobe até 4 linhas) [Histórico]
+                                    # Busca o nome olhando para cima (subindo até 4 linhas)
                                     for j in range(i-1, i-5, -1):
                                         if j < 0: break
                                         text_prev = lines[j].lower()
                                         
-                                        # LISTA DE PALAVRAS IGNORADAS ATUALIZADA (Categorias e Selos)
+                                        # Lista negra expandida (Cabeçalhos e Marketing) [Histórico]
                                         ignore = [
                                             'carrinho', 'adicionar', 'lista', 'indisponível', 'r$', 
                                             'off', 'ver mais', 'comprar', 'oferta', '%', 'desconto', 
                                             'unidade', 'kg', '360°', '360', 'presunto e peito de peru', 
-                                            'íntimos', 'banho e higiene', 'peixes', 'frutos do mar'
+                                            'íntimos', 'banho e higiene', 'peixes', 'frutos do mar',
+                                            'carnes bovinas', 'aves', 'frutas', 'peso', 'gramas'
                                         ]
                                         
-                                        # Validação do nome: ignora se estiver na lista ou for apenas número
+                                        # Validação do nome
                                         if not any(word == text_prev for word in ignore) and len(text_prev) > 3:
+                                            # Garante que não é um número/porcentagem solto
                                             if not text_prev.replace('-','').replace('%','').isdigit():
                                                 nome_prod = lines[j]
                                                 break 
@@ -89,23 +103,21 @@ with st.sidebar:
 
                     st.session_state.base_produtos = base_temp
                     browser.close()
-                    st.success(f"✅ Base carregada com {len(base_temp)} itens!")
+                    st.success(f"✅ Base carregada com {len(base_temp)} itens reais!")
             except Exception as e:
                 st.error(f"Erro técnico: {e}")
 
-# INTERFACE DE BUSCA LOCAL (Processamento em memória Python) [8, 9]
+# INTERFACE DE BUSCA LOCAL [Histórico]
 if st.session_state.base_produtos:
     st.divider()
-    busca = st.text_input("🔍 O que deseja filtrar da base coletada? (Ex: Presunto, Arroz, Tilápia)").strip().lower()
+    busca = st.text_input("🔍 Pesquise na base limpa (Ex: Presunto, Papel, Tilápia):").strip().lower()
     
     if busca:
-        # Filtro de lista: busca o termo no nome do produto formatado [10, 11]
         resultados = [i for i in st.session_state.base_produtos if busca in i['Produto'].lower()]
         if resultados:
-            st.write(f"Encontrados **{len(resultados)}** resultados:")
             st.table(resultados)
         else:
-            st.warning("Produto não encontrado na base extraída.")
+            st.warning("Produto não encontrado.")
     else:
         st.dataframe(st.session_state.base_produtos, use_container_width=True)
 else:
