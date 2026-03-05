@@ -5,9 +5,9 @@ from playwright.sync_api import sync_playwright
 
 os.system("playwright install chromium")
 
-st.set_page_config(page_title="Beltrame Pro v16", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="Beltrame Pro v17", page_icon="🛒", layout="wide")
 
-# 1. MAPEAMENTO DAS CATEGORIAS (Sem Promoções) [Conversa]
+# 1. MAPEAMENTO DAS CATEGORIAS (Sem a URL de Promoções) [Conversa]
 CATEGORIAS = {
     "Mercearia": "https://beltramesupermercados.com.br/categorias/mercearia",
     "Carnes e Aves": "https://beltramesupermercados.com.br/categorias/carnes-e-aves",
@@ -23,15 +23,15 @@ def limpar_valor(texto):
     try: return float(texto.replace("R$", "").replace(".", "").replace(",", ".").strip())
     except: return 0.0
 
-st.title("🛒 Engine Beltrame - Correção de Alinhamento (v16)")
+st.title("🛒 Engine Beltrame - Filtro de Negativação Absoluto (v17)")
 
 if 'base_produtos' not in st.session_state:
     st.session_state.base_produtos = []
 
 with st.sidebar:
-    st.header("⚙️ Painel de Controle")
-    if st.button("🚀 Iniciar Coleta Sem Erros"):
-        with st.spinner("Sincronizando nomes e preços..."):
+    st.header("⚙️ Controle")
+    if st.button("🚀 Iniciar Varredura"):
+        with st.spinner("Limpando ruídos e sincronizando dados..."):
             try:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
@@ -57,8 +57,26 @@ with st.sidebar:
                             lines = [l.strip() for l in text_content.split('\n') if l.strip()]
                             
                             i = 0
-                            ultimo_i_nome = -1 # Trava para evitar que um produto pegue o nome do anterior [Sistematização]
+                            ultimo_i_nome = -1 
                             
+                            # LISTA DE NEGATIVAÇÃO (Normalizada para minúsculas para comparação segura)
+                            ruido_bruto = [
+                                'cafés, chás e achocolatados', 'açúcares e adoçantes', 'óleos', 'azeites',
+                                'sopas instantâneas', 'cremes prontos', 'farináceos', 'massas',
+                                'grãos, arrozes e feijões', 'snacks', 'salgadinhos de milho',
+                                'salgadinhos de batata', 'biscoitos salgados', 'biscoitos doces',
+                                'geleias, doces, mel e cia', 'conservas de ovos', 'conservas de legumes e vegetais',
+                                'conservas de carnes', 'conservas de peixes', 'molhos', 'molhos para massas',
+                                'molhos para saladas', 'temperos secos', 'temperos em pó', 'condimentos',
+                                'vinagres', 'bomboniere', 'leites em pó', 'erva mate', 'frutas em calda',
+                                'cereais, sucrilhos, granolas e cia', 'panetones e chocotones', 'suplementos',
+                                'pratos prontos', 'carrinho', 'adicionar', 'lista', 'indisponível', 'off',
+                                'ver mais', 'comprar', 'oferta', '%', 'desconto', '360°', '360', 'unidade',
+                                'kg', 'gramas', 'peso', 'mais', 'sucos', 'refrigerantes', 'bebidas',
+                                'mercearia', 'carnes', 'aves', 'frutas', 'limpeza', 'íntimos', 'banho', 'higiene'
+                            ]
+                            ruido_set = set(item.lower().strip() for item in ruido_bruto)
+
                             while i < len(lines):
                                 line = lines[i]
                                 
@@ -68,7 +86,6 @@ with st.sidebar:
                                         i += 1
                                         continue
                                     
-                                    # Lógica de agrupamento (Magnitude) [Conversa]
                                     precos_bloco = [line]
                                     pula_proximo = False
                                     if i+1 < len(lines) and 'R$' in lines[i+1] and not any(x in lines[i+1].lower() for x in ["kg", "un"]):
@@ -79,26 +96,19 @@ with st.sidebar:
                                     p_cheio = precos_bloco[numeros.index(max(numeros))]
                                     p_promo = precos_bloco[numeros.index(min(numeros))] if len(numeros) > 1 else "-"
                                     
-                                    # BUSCA PELO NOME COM TRAVA DE SEGURANÇA
+                                    # BUSCA PELO NOME COM FILTRO ABSOLUTO
                                     nome_item = "Desconhecido"
-                                    ruido = [
-                                        'carrinho', 'adicionar', 'lista', 'indisponível', 'off', 'ver mais', 
-                                        'comprar', 'oferta', '%', 'desconto', '360°', '360', 'unidade', 
-                                        'kg', 'gramas', 'peso', 'mais', 'sucos', 'refrigerantes',
-                                        'cafés, chás e achocolatados', 'açúcares e adoçantes', 'óleos', 
-                                        'azeites', 'sopas instantâneas', 'cremes prontos', 'farináceos', 
-                                        'massas', 'grãos, arrozes e feijões', 'snacks', 'bomboniere', 
-                                        'salgadinhos', 'biscoitos', 'íntimos', 'banho', 'higiene', 'pratos prontos'
-                                    ]
-
-                                    # Só busca o nome se ele estiver ABAIXO do último nome processado
+                                    
+                                    # Sobe do preço até a trava de segurança do item anterior [Conversa]
                                     for j in range(i-1, max(-1, ultimo_i_nome), -1):
-                                        txt = lines[j]
+                                        txt = lines[j].strip()
                                         txt_low = txt.lower()
+                                        
+                                        # Regra: Deve ter letras, não ter R$, não ser ruído e tamanho mínimo [6, 7]
                                         if any(c.isalpha() for c in txt) and 'R$' not in txt and len(txt) > 3:
-                                            if not any(word == txt_low for word in ruido):
+                                            if txt_low not in ruido_set:
                                                 nome_item = txt
-                                                ultimo_i_nome = j # Marca este índice como "usado" [Tratamento]
+                                                ultimo_i_nome = j 
                                                 break
                                     
                                     if nome_item != "Desconhecido":
@@ -114,15 +124,15 @@ with st.sidebar:
 
                     st.session_state.base_produtos = base_temp
                     browser.close()
-                    st.success(f"✅ Coleta finalizada com {len(base_temp)} itens alinhados!")
+                    st.success(f"✅ Coleta finalizada: {len(base_temp)} itens alinhados e filtrados.")
             except Exception as e:
                 st.error(f"Erro: {e}")
 
-# EXIBIÇÃO ESTÁVEL [Conversa]
+# EXIBIÇÃO ESTÁVEL COM PANDAS E ARROW [Conversa]
 if st.session_state.base_produtos:
     st.divider()
     df = pd.DataFrame(st.session_state.base_produtos).astype(str)
-    busca = st.text_input("🔍 Pesquisar na base corrigida:").strip().lower()
+    busca = st.text_input("🔍 Pesquisar na base limpa:").strip().lower()
     if busca:
         res = df[df['Produto'].str.lower().str.contains(busca)]
         st.table(res) if not res.empty else st.warning("Não encontrado.")
