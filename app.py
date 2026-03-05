@@ -3,7 +3,7 @@ import streamlit as st
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Instalação do navegador no servidor
+# Instalação do motor de navegação no servidor
 os.system("playwright install chromium")
 
 st.set_page_config(page_title="Comprador de Mercado", layout="wide")
@@ -53,4 +53,25 @@ if st.button("Executar Busca 🚀"):
                             # Pega o texto de cada card para não misturar nomes e preços
                             card_text = page.evaluate("""
                                 () => {
-                                    const cards = Array.from(document.querySelectorAll('div,
+                                    const cards = Array.from(document.querySelectorAll('div, section, article'))
+                                        .filter(el => el.innerText.includes('R$') && el.innerText.length < 500);
+                                    return cards.length > 0 ? cards[0].innerText : null;
+                                }
+                            """)
+
+                            if card_text:
+                                lines = [l.strip() for l in card_text.split('\n') if l.strip()]
+                                p_val, n_val = None, "Item não identificado"
+                                
+                                for i, line in enumerate(lines):
+                                    if 'R$' in line and any(c.isdigit() for c in line):
+                                        p_val = line
+                                        # Procura o nome nas linhas vizinhas
+                                        vizinhos = [i-1, i-2, i+1, i+2]
+                                        for v_idx in vizinhos:
+                                            if 0 <= v_idx < len(lines):
+                                                cand = lines[v_idx]
+                                                lixo = ['oferta', 'off', '%', 'unidade', 'kg', 'adicionar']
+                                                if len(cand) > 3 and 'R$' not in cand and not any(w in cand.lower() for w in lixo):
+                                                    n_val = cand
+                                                    break
