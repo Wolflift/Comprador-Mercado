@@ -2,11 +2,12 @@ import os
 import streamlit as st
 from playwright.sync_api import sync_playwright
 
-# Instalação mandatória do navegador
+# Instalação mandatória do navegador no servidor do Streamlit [Histórico]
 os.system("playwright install chromium")
 
-st.set_page_config(page_title="Sistema Beltrame v3", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="Sistema Beltrame Pro", page_icon="🛒", layout="wide")
 
+# Mapeamento sistematizado das 10 URLs [Histórico]
 CATEGORIAS = {
     "Mercearia": "https://beltramesupermercados.com.br/categorias/mercearia",
     "Carnes e Aves": "https://beltramesupermercados.com.br/categorias/carnes-e-aves",
@@ -19,22 +20,22 @@ CATEGORIAS = {
     "Peixes e Frutos do Mar": "https://beltramesupermercados.com.br/categorias/peixes-e-frutos-do-mar"
 }
 
-st.title("🛒 Engine Beltrame - Inteligência Anti-Ruído")
+st.title("🛒 Engine Beltrame - Extração com Filtro de Categorias")
 
 if 'base_produtos' not in st.session_state:
     st.session_state.base_produtos = []
 
 with st.sidebar:
-    st.header("⚙️ Controle de Coleta")
-    if st.button("🚀 Iniciar Varredura Completa"):
-        with st.spinner("O robô está descendo as prateleiras e limpando os dados..."):
+    st.header("⚙️ Painel de Controle")
+    if st.button("🚀 Iniciar Varredura Geral"):
+        with st.spinner("Processando dados e aplicando filtros de limpeza..."):
             try:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     context = browser.new_context(user_agent="Mozilla/5.0")
                     page = context.new_page()
 
-                    # 1. RESOLVER POPUP (Sistematização de tarefa [5])
+                    # Resolve o popup de loja (Sistematização de tarefa repetitiva) [Histórico]
                     page.goto("https://beltramesupermercados.com.br", wait_until="domcontentloaded")
                     try:
                         btn = page.get_by_role("button", name="Confirmar", exact=False)
@@ -48,7 +49,7 @@ with st.sidebar:
                         try:
                             page.goto(url, wait_until="domcontentloaded", timeout=40000)
                             
-                            # 2. ROLAGEM AUTOMÁTICA: Para carregar todos os itens (Lazy Loading)
+                            # Rolagem para carregar itens dinâmicos (Lazy Loading) [Histórico]
                             for _ in range(5):
                                 page.mouse.wheel(0, 2000)
                                 page.wait_for_timeout(800)
@@ -57,46 +58,52 @@ with st.sidebar:
                             text_content = page.locator("body").inner_text()
                             lines = [l.strip() for l in text_content.split('\n') if l.strip()]
                             
-                            # 3. LÓGICA DE EXTRAÇÃO POR BLOCOS (Tratamento de Variáveis [1])
                             for i, line in enumerate(lines):
-                                # Identifica uma linha de preço
                                 if 'R$' in line and any(c.isdigit() for c in line):
                                     
-                                    # Se a linha contém "kg" ou "unidade" no texto do preço, é metadado
+                                    # Filtra metadados de preço (kg/un) [Histórico]
                                     if "kg" in line.lower() or "un" in line.lower():
                                         continue
                                     
-                                    # Verifica se o preço seguinte está muito próximo (Promoção "De/Por")
-                                    # Se houver outro preço logo abaixo, este atual é o preço 'caro' (antigo)
+                                    # Lógica de detecção de preço final (ignora preço 'De' em promoções) [Histórico]
                                     tem_preco_venda_depois = False
                                     for k in range(i + 1, min(i + 3, len(lines))):
                                         if 'R$' in lines[k] and not ("kg" in lines[k].lower()):
                                             tem_preco_venda_depois = True
                                             break
-                                    
-                                    if tem_preco_venda_depois:
-                                        continue
+                                    if tem_preco_venda_depois: continue
 
-                                    # Se chegou aqui, este é o PREÇO FINAL de compra
                                     preco_final = line
                                     nome_real = "Desconhecido"
                                     
-                                    # Busca o nome subindo, mas IGNORA selos de marketing e categorias
+                                    # Busca o nome real subindo as linhas [Histórico]
                                     for j in range(i-1, i-6, -1):
                                         if j < 0: break
                                         txt = lines[j]
                                         txt_low = txt.lower()
                                         
-                                        # Lista de Ruído (Sistematização de filtros [5])
+                                        # LISTA DE RUÍDO ATUALIZADA (Frases para ignorar exatamente como escritas)
                                         ruido = [
                                             'carrinho', 'adicionar', 'lista', 'indisponível', 'r$', 
                                             'off', 'ver mais', 'comprar', 'oferta', '%', 'desconto', 
                                             '360°', '360', 'presunto e peito de peru', 'íntimos', 
                                             'banho e higiene', 'peixes', 'frutos do mar', 'aves', 
-                                            'frutas', 'peso', 'gramas', 'carnes bovinas', 'açúcares'
+                                            'frutas', 'peso', 'gramas', 'carnes bovinas', 'açúcares',
+                                            'cafés, chás e achocolatados', 'açúcares e adoçantes',
+                                            'óleos', 'azeites', 'sopas instantâneas', 'cremes prontos',
+                                            'farináceos', 'massas', 'grãos, arrozes e feijões', 'snacks',
+                                            'salgadinhos de milho', 'salgadinhos de batata', 
+                                            'biscoitos salgados', 'biscoitos doces', 
+                                            'geleias, doces, mel e cia', 'conservas de ovos',
+                                            'conservas de legumes e vegetais', 'conservas de carnes',
+                                            'conservas de peixes', 'molhos', 'molhos para massas',
+                                            'molhos para saladas', 'temperos secos', 'temperos em pó',
+                                            'condimentos', 'vinagres', 'bomboniere', 'leites em pó',
+                                            'erva mate', 'frutas em calda', 'panetones e chocotones',
+                                            'cereais, sucrilhos, granolas e cia', 'suplementos', 'pratos prontos'
                                         ]
                                         
-                                        # Se não for ruído e tiver tamanho de nome, capturamos
+                                        # Validação do nome: não pode estar na lista de ruído nem ser apenas números [6, 11]
                                         if not any(word == txt_low for word in ruido) and len(txt) > 3:
                                             if not txt.replace('-','').replace('%','').isdigit():
                                                 nome_real = txt
@@ -112,20 +119,22 @@ with st.sidebar:
 
                     st.session_state.base_produtos = base_temp
                     browser.close()
-                    st.success(f"✅ Base consolidada com {len(base_temp)} itens!")
+                    st.success(f"✅ Base carregada com {len(base_temp)} produtos reais!")
             except Exception as e:
                 st.error(f"Erro técnico na coleta: {e}")
 
-# INTERFACE DE BUSCA (Processamento Local Instantâneo [5])
+# INTERFACE DE BUSCA LOCAL (Processamento em memória Python) [12, 13]
 if st.session_state.base_produtos:
     st.divider()
-    busca = st.text_input("🔍 O que você quer comprar hoje?").strip().lower()
+    busca = st.text_input("🔍 Pesquisar na base limpa:").strip().lower()
     
     if busca:
         resultados = [i for i in st.session_state.base_produtos if busca in i['Produto'].lower()]
         if resultados:
             st.table(resultados)
         else:
-            st.warning("Item não encontrado na base extraída.")
+            st.warning("Produto não encontrado na base extraída.")
     else:
         st.dataframe(st.session_state.base_produtos, use_container_width=True)
+else:
+    st.info("A base está vazia. Inicie a extração no menu lateral para carregar os dados.")
