@@ -3,99 +3,102 @@ import streamlit as st
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Instalação mandatória do navegador no servidor do Streamlit
+# Instalação mandatória (Nota: Informação externa às fontes)
 os.system("playwright install chromium")
 
 st.set_page_config(page_title="Sistema de Compras Pro", layout="wide")
-st.title("🛒 Engine V25 - Estabilidade de Sessão (Beltrame)")
+st.title("🛒 Engine de Busca - Estabilidade Beltrame")
 
 lista_txt = st.text_area("Sua Lista de Compras:", placeholder="Cebola\nArroz")
 
-if st.button("Executar Busca Profissional 🚀"):
+if st.button("Executar Busca 🚀"):
+    # Normalização da lista: remove espaços e ignora linhas vazias [1]
     itens = [i.strip() for i in lista_txt.split('\n') if i.strip()]
+    
     if itens:
-        with st.spinner("Validando acesso e capturando preços..."):
+        with st.spinner("Conectando ao mercado e capturando preços..."):
             try:
                 with sync_playwright() as p:
-                    # Lançamento com disfarce de usuário real
                     browser = p.chromium.launch(headless=True)
                     context = browser.new_context(
                         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0"
                     )
                     page = context.new_page()
 
-                    # 1. PASSO DE SESSÃO: Resolve o pop-up de loja antes de qualquer busca
+                    # Passo 1: Acesso inicial para validar cookies/pop-ups
                     page.goto("https://beltramesupermercados.com.br", wait_until="domcontentloaded", timeout=60000)
                     
                     try:
-                        # Tenta localizar o botão azul de confirmar
                         btn_confirmar = page.locator("button:has-text('Confirmar')")
-                        if btn_confirmar.is_visible(timeout=10000):
+                        if btn_confirmar.is_visible(timeout=5000):
                             btn_confirmar.click()
-                            page.wait_for_timeout(3000)
                     except:
-                        # Segue se o pop-up não aparecer (já salvo por cookie)
                         pass
 
                     res, total_geral = [], 0.0
 
                     for item in itens:
                         try:
-                            # 2. BUSCA INDIVIDUAL
-                            query = urllib.parse.quote(item)
+                            # Normalização da busca para evitar erros de digitação [1, 2]
+                            item_busca = item.strip().lower()
+                            query = urllib.parse.quote(item_busca)
                             url_busca = f"https://beltramesupermercados.com.br/busca?q={query}"
-                            page.goto(url_busca, wait_until="load", timeout=60000)
                             
-                            # 3. SINCRONISMO: Espera o R$ aparecer para evitar o Timeout
-                            page.wait_for_selector("text=R$", timeout=20000)
-                            page.wait_for_timeout(3000)
+                            page.goto(url_busca, wait_until="load", timeout=30000)
+                            
+                            # Espera flexível: busca por qualquer texto que contenha R$
+                            page.wait_for_selector("text=R$", timeout=15000)
 
-                            # 4. EXTRAÇÃO POR ESCOPO (Isola o primeiro 'card' de produto)
-                            # Indentação e fechamento revisados
+                            # Extração inteligente via JavaScript no navegador
                             item_data = page.evaluate("""
                                 () => {
+                                    // Busca elementos que pareçam cards de produto (contêm R$ e não são gigantes)
                                     const cards = Array.from(document.querySelectorAll('div, section, article'))
-                                        .filter(el => el.innerText.includes('R$') && el.innerText.length < 450);
-                                    return cards.length > 0 ? cards[0].innerText : null;
+                                        .filter(el => el.innerText.includes('R$') && el.innerText.length < 500);
+                                    return cards.length > 0 ? cards.innerText : null;
                                 }
                             """)
 
                             if item_data:
+                                # Transforma o texto do card em lista para processamento [3]
                                 linhas = [l.strip() for l in item_data.split('\n') if l.strip()]
-                                nome_encontrado, preco_encontrado = "Item Encontrado", None
+                                preco_encontrado = None
+                                nome_encontrado = "Produto não identificado"
 
                                 for i, linha in enumerate(linhas):
-                                    if 'R$' in linha and any(c.isdigit() for c in linha):
+                                    # Identifica o preço de forma mais flexível [4]
+                                    if 'R$' in linha:
                                         preco_encontrado = linha
-                                        # Busca o nome num raio de 4 linhas vizinhas
-                                        indices_vizinhos = [i-1, i-2, i+1, i+2]
-                                        for idx in indices_vizinhos:
+                                        # Busca o nome com lógica de vizinhança flexível
+                                        for offset in [-1, -2, 1, 2]:
+                                            idx = i + offset
                                             if 0 <= idx < len(linhas):
                                                 cand = linhas[idx]
-                                                lixo = ['oferta', 'off', '%', 'unidade', 'peso', 'adicionar', 'comprar', 'kg']
-                                                if len(cand) > 3 and 'R$' not in cand and not any(w in cand.lower() for w in lixo):
-                                                    nome_encontrado = cand.title()
+                                                lixo = ['oferta', 'off', '%', 'unidade', 'adicionar', 'comprar', 'kg', 'g']
+                                                # Verifica se não é preço e se não contém palavras de lixo [2]
+                                                if len(cand) > 2 and 'R$' not in cand and not any(w in cand.lower() for w in lixo):
+                                                    nome_encontrado = cand.title() # Formatação visual [2]
                                                     break
                                         break
 
                                 if preco_encontrado:
-                                    # Limpeza de string e soma real do valor
+                                    # Limpeza de caracteres não numéricos para conversão em float [5, 6]
                                     val_limpo = "".join(filter(lambda x: x.isdigit() or x in ",.", preco_encontrado))
-                                    total_geral += float(val_limpo.replace('.', '').replace(',', '.'))
+                                    valor_float = float(val_limpo.replace('.', '').replace(',', '.'))
+                                    total_geral += valor_float
                                     res.append({"Status": "✅", "Busca": item, "Produto": nome_encontrado, "Preço": preco_encontrado})
                                 else:
                                     res.append({"Status": "⚠️", "Busca": item, "Produto": "Dados incompletos", "Preço": "-"})
                             else:
-                                res.append({"Status": "❌", "Busca": item, "Produto": "Não encontrado", "Preço": "-"})
+                                res.append({"Status": "❌", "Busca": item, "Produto": "Não encontrado no site", "Preço": "-"})
 
-                        except:
-                            # Captura erros individuais por item sem travar o motor
-                            res.append({"Status": "❌", "Busca": item, "Produto": "Erro/Timeout no Item", "Preço": "-"})
+                        except Exception as e:
+                            # Erros não passam silenciosamente; são reportados na tabela [7, 8]
+                            res.append({"Status": "❌", "Busca": item, "Produto": f"Erro: {str(e)[:30]}...", "Preço": "-"})
 
                     browser.close()
                     
-                    # Exibição dos resultados finais
-                    st.success(f"✅ Rancho Calculado: **R$ {total_geral:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
+                    st.success(f"✅ Total Calculado: **R$ {total_geral:,.2f}**".replace('.', 'X').replace(',', '.').replace('X', ','))
                     st.table(res)
 
             except Exception as e:
