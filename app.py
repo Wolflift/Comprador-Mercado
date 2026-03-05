@@ -1,14 +1,13 @@
 import os
 import streamlit as st
-import pandas as pd # Essencial para tratar tabelas e evitar o erro Arrow [Conversa]
+import pandas as pd
 from playwright.sync_api import sync_playwright
 
-# Instalação mandatória do navegador no servidor [3]
 os.system("playwright install chromium")
 
-st.set_page_config(page_title="Beltrame Pro v15", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="Beltrame Pro v16", page_icon="🛒", layout="wide")
 
-# 1. MAPEAMENTO DE CATEGORIAS (URL de Promoções excluída conforme solicitado) [Conversa]
+# 1. MAPEAMENTO DAS CATEGORIAS (Sem Promoções) [Conversa]
 CATEGORIAS = {
     "Mercearia": "https://beltramesupermercados.com.br/categorias/mercearia",
     "Carnes e Aves": "https://beltramesupermercados.com.br/categorias/carnes-e-aves",
@@ -20,27 +19,25 @@ CATEGORIAS = {
     "Peixes e Frutos do Mar": "https://beltramesupermercados.com.br/categorias/peixes-e-frutos-do-mar"
 }
 
-# Função para tratar variáveis numéricas (converte R$ para número real) [1]
-def p_to_f(t):
-    try: return float(t.replace("R$", "").replace(".", "").replace(",", ".").strip())
+def limpar_valor(texto):
+    try: return float(texto.replace("R$", "").replace(".", "").replace(",", ".").strip())
     except: return 0.0
 
-st.title("🛒 Engine Beltrame - Filtro de Títulos e Magnitude")
+st.title("🛒 Engine Beltrame - Correção de Alinhamento (v16)")
 
 if 'base_produtos' not in st.session_state:
     st.session_state.base_produtos = []
 
 with st.sidebar:
     st.header("⚙️ Painel de Controle")
-    if st.button("🚀 Iniciar Varredura"):
-        with st.spinner("Limpando ruídos e organizando prateleiras..."):
+    if st.button("🚀 Iniciar Coleta Sem Erros"):
+        with st.spinner("Sincronizando nomes e preços..."):
             try:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     ctx = browser.new_context(user_agent="Mozilla/5.0")
                     page = ctx.new_page()
 
-                    # Resolve popup inicial de unidade [Conversa]
                     page.goto("https://beltramesupermercados.com.br", wait_until="domcontentloaded")
                     try:
                         btn = page.get_by_role("button", name="Confirmar", exact=False)
@@ -51,7 +48,7 @@ with st.sidebar:
                     for nome_cat, url in CATEGORIAS.items():
                         try:
                             page.goto(url, wait_until="domcontentloaded", timeout=40000)
-                            for _ in range(5): # Rolagem para carregamento dinâmico
+                            for _ in range(5): 
                                 page.mouse.wheel(0, 2000)
                                 page.wait_for_timeout(1000)
 
@@ -60,48 +57,48 @@ with st.sidebar:
                             lines = [l.strip() for l in text_content.split('\n') if l.strip()]
                             
                             i = 0
+                            ultimo_i_nome = -1 # Trava para evitar que um produto pegue o nome do anterior [Sistematização]
+                            
                             while i < len(lines):
                                 line = lines[i]
-                                # IDENTIFICAÇÃO DE PREÇO (Âncora de busca)
+                                
+                                # IDENTIFICAÇÃO DE PREÇO
                                 if 'R$' in line and any(c.isdigit() for c in line):
                                     if "kg" in line.lower() or "un" in line.lower():
                                         i += 1
                                         continue
                                     
-                                    # Lógica de agrupamento por vizinhança (Promoção)
+                                    # Lógica de agrupamento (Magnitude) [Conversa]
                                     precos_bloco = [line]
                                     pula_proximo = False
                                     if i+1 < len(lines) and 'R$' in lines[i+1] and not any(x in lines[i+1].lower() for x in ["kg", "un"]):
                                         precos_bloco.append(lines[i+1])
                                         pula_proximo = True
                                     
-                                    # MAGNITUDE: Define Preço Cheio (maior) e Menor Valor (menor) [Conversa]
-                                    numeros = [p_to_f(p) for p in precos_bloco]
+                                    numeros = [limpar_valor(p) for p in precos_bloco]
                                     p_cheio = precos_bloco[numeros.index(max(numeros))]
                                     p_promo = precos_bloco[numeros.index(min(numeros))] if len(numeros) > 1 else "-"
                                     
-                                    # BUSCA PELO NOME COM FILTRO EXATO DE FRASES NEGATIVADAS
+                                    # BUSCA PELO NOME COM TRAVA DE SEGURANÇA
                                     nome_item = "Desconhecido"
-                                    
-                                    # LISTA DE RUÍDO ATUALIZADA (Exatamente conforme solicitado) [Conversa]
                                     ruido = [
-                                        'carrinho', 'adicionar', 'lista', 'indisponível', 'off', 'ver mais', 'comprar', 'oferta', '%', 'desconto', '360°', 'unidade', 'kg', 'gramas', 'peso',
-                                        'cafés, chás e achocolatados', 'açúcares e adoçantes', 'óleos', 'azeites', 'sopas instantâneas', 'cremes prontos', 'farináceos', 'massas', 'grãos, arrozes e feijões',
-                                        'snacks', 'salgadinhos de milho', 'salgadinhos de batata', 'biscoitos salgados', 'biscoitos doces', 'geleias, doces, mel e cia', 'conservas de ovos',
-                                        'conservas de legumes e vegetais', 'conservas de carnes', 'conservas de peixes', 'molhos', 'molhos para massas', 'molhos para saladas', 'temperos secos',
-                                        'temperos em pó', 'condimentos', 'vinagres', 'bomboniere', 'leites em pó', 'erva mate', 'frutas em calda', 'cereais, sucrilhos, granolas e cia',
-                                        'panetones e chocotones', 'suplementos', 'pratos prontos', 'mais', 'sucos', 'refrigerantes'
+                                        'carrinho', 'adicionar', 'lista', 'indisponível', 'off', 'ver mais', 
+                                        'comprar', 'oferta', '%', 'desconto', '360°', '360', 'unidade', 
+                                        'kg', 'gramas', 'peso', 'mais', 'sucos', 'refrigerantes',
+                                        'cafés, chás e achocolatados', 'açúcares e adoçantes', 'óleos', 
+                                        'azeites', 'sopas instantâneas', 'cremes prontos', 'farináceos', 
+                                        'massas', 'grãos, arrozes e feijões', 'snacks', 'bomboniere', 
+                                        'salgadinhos', 'biscoitos', 'íntimos', 'banho', 'higiene', 'pratos prontos'
                                     ]
 
-                                    for j in range(i-1, i-9, -1): # Sobe 8 linhas buscando o nome alfabético [Conversa]
+                                    # Só busca o nome se ele estiver ABAIXO do último nome processado
+                                    for j in range(i-1, max(-1, ultimo_i_nome), -1):
                                         txt = lines[j]
                                         txt_low = txt.lower()
-                                        
-                                        # Validação do Nome: Letras, sem R$, sem ser ruído e tamanho mínimo [4]
                                         if any(c.isalpha() for c in txt) and 'R$' not in txt and len(txt) > 3:
-                                            # Verifica se o texto NÃO corresponde a nenhum ruído exato
                                             if not any(word == txt_low for word in ruido):
                                                 nome_item = txt
+                                                ultimo_i_nome = j # Marca este índice como "usado" [Tratamento]
                                                 break
                                     
                                     if nome_item != "Desconhecido":
@@ -113,23 +110,19 @@ with st.sidebar:
                                         })
                                     if pula_proximo: i += 1 
                                 i += 1
-                        except:
-                            i += 1
-                            continue
+                        except: i += 1; continue
 
                     st.session_state.base_produtos = base_temp
                     browser.close()
-                    st.success(f"✅ Base carregada! {len(base_temp)} itens encontrados.")
+                    st.success(f"✅ Coleta finalizada com {len(base_temp)} itens alinhados!")
             except Exception as e:
-                st.error(f"Erro na extração: {e}")
+                st.error(f"Erro: {e}")
 
-# Interface de Busca Local com Estabilidade Arrow [Conversa]
+# EXIBIÇÃO ESTÁVEL [Conversa]
 if st.session_state.base_produtos:
     st.divider()
-    # Converte para DataFrame e força string para evitar erros de tipagem [Conversa]
     df = pd.DataFrame(st.session_state.base_produtos).astype(str)
-    
-    busca = st.text_input("🔍 Pesquisar na base tratada:").strip().lower()
+    busca = st.text_input("🔍 Pesquisar na base corrigida:").strip().lower()
     if busca:
         res = df[df['Produto'].str.lower().str.contains(busca)]
         st.table(res) if not res.empty else st.warning("Não encontrado.")
