@@ -2,64 +2,88 @@ import os
 import streamlit as st
 from playwright.sync_api import sync_playwright
 
+# Instalação mandatória do navegador no servidor do Streamlit
 os.system("playwright install chromium")
 
-# Layout mais largo para caber a tabela
-st.set_page_config(page_title="Comparador de Mercado", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="Comparador Beltrame Pro", page_icon="🛒", layout="wide")
 
-st.title("🛒 Extrator de Preços - Beltrame")
-st.write("Cole o link de uma categoria do mercado para extrairmos os produtos em formato de tabela.")
+st.title("🛒 Engine de Busca por Categorias - Beltrame")
+st.write("O robô irá percorrer as categorias mapeadas para encontrar o seu item com precisão.")
 
-url = st.text_input("Link do Mercado:")
+# 1. MAPEAMENTO DAS URLs (Sistematização de dados conforme fontes [1, 2])
+CATEGORIAS = [
+    "https://beltramesupermercados.com.br/promocoes",
+    "https://beltramesupermercados.com.br/categorias/mercearia",
+    "https://beltramesupermercados.com.br/categorias/carnes-e-aves",
+    "https://beltramesupermercados.com.br/categorias/hortifruti",
+    "https://beltramesupermercados.com.br/categorias/bebidas-alcoolicas",
+    "https://beltramesupermercados.com.br/categorias/bebidas",
+    "https://beltramesupermercados.com.br/categorias/laticinios-e-frios",
+    "https://beltramesupermercados.com.br/categorias/higiene-e-beleza",
+    "https://beltramesupermercados.com.br/categorias/limpeza",
+    "https://beltramesupermercados.com.br/categorias/peixes-e-frutos-do-mar"
+]
 
-if st.button("Extrair Produtos"):
-    if url:
-        with st.spinner("Lendo as prateleiras e anotando os preços... isso leva cerca de 20 segundos."):
+item_alvo = st.text_input("Qual item você deseja encontrar?", placeholder="Ex: cebola, arroz, sabão...")
+
+if st.button("Executar Varredura Geral 🚀"):
+    if not item_alvo:
+        st.warning("Por favor, digite o nome de um item.")
+    else:
+        with st.spinner(f"O robô está percorrendo todas as seções em busca de '{item_alvo}'..."):
             try:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
-                    page = browser.new_page()
-                    
-                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                    
-                    # Agora o robô só prossegue quando enxergar um "R$" na tela
-                    page.wait_for_selector("text=R$", timeout=15000)
-                    
-                    # Pega todo o texto escrito na tela do mercado
-                    text_content = page.locator("body").inner_text()
-                    lines = [line.strip() for line in text_content.split('\n') if line.strip()]
-                    
-                    produtos = []
-                    
-                    # Varre as linhas procurando preços e nomes
-                    for i, line in enumerate(lines):
-                        if 'R$' in line and any(c.isdigit() for c in line):
-                            preco = line
-                            nome = "Desconhecido"
+                    context = browser.new_context(user_agent="Mozilla/5.0")
+                    page = context.new_page()
+
+                    resultados_finais = []
+
+                    # 2. LOOP DE AUTOMAÇÃO (Percorre cada link fornecido)
+                    for url in CATEGORIAS:
+                        try:
+                            page.goto(url, wait_until="domcontentloaded", timeout=30000)
                             
-                            # Olha para cima para achar o nome, ignorando lixo
-                            for j in range(i-1, -1, -1):
-                                text_prev = lines[j].lower()
-                                ignore_words = ['carrinho', 'adicionar', 'lista', 'indisponível', 'r$', 'off', 'ver mais', 'comprar']
-                                if not any(word in text_prev for word in ignore_words):
-                                    nome = lines[j]
-                                    break
+                            # Espera mínima para carregar preços
+                            page.wait_for_selector("text=R$", timeout=10000)
                             
-                            # Filtro para evitar linhas curtas e produtos duplicados
-                            if len(nome) > 3:
-                                if not any(p['Produto'] == nome.title() for p in produtos):
-                                    produtos.append({"Produto": nome.title(), "Preço": preco})
-                    
+                            # Captura o texto e transforma em lista para processamento [5, 6]
+                            text_content = page.locator("body").inner_text()
+                            lines = [line.strip() for line in text_content.split('\n') if line.strip()]
+                            
+                            # 3. LÓGICA DE EXTRAÇÃO E FILTRO
+                            for i, line in enumerate(lines):
+                                if 'R$' in line and any(c.isdigit() for c in line):
+                                    preco = line
+                                    nome = "Desconhecido"
+                                    
+                                    # Busca o nome olhando para cima (sua lógica funcional)
+                                    for j in range(i-1, -1, -1):
+                                        text_prev = lines[j].lower()
+                                        ignore = ['carrinho', 'adicionar', 'lista', 'indisponível', 'r$', 'off', 'ver mais', 'comprar']
+                                        if not any(word in text_prev for word in ignore):
+                                            nome = lines[j]
+                                            break
+                                    
+                                    # FILTRO INTELIGENTE: Só adiciona se o nome contiver o que o usuário busca
+                                    if item_alvo.lower() in nome.lower():
+                                        if not any(r['Produto'] == nome.title() for r in resultados_finais):
+                                            resultados_finais.append({
+                                                "Categoria": url.split('/')[-1].title(),
+                                                "Produto": nome.title(), 
+                                                "Preço": preco
+                                            })
+                        except:
+                            continue # Pula categorias que falharem ou não tiverem o item
+
                     browser.close()
                     
-                    if produtos:
-                        st.success(f"✅ Sensacional! O robô anotou {len(produtos)} produtos nesta página.")
-                        # Transforma a nossa lista em uma tabela interativa!
-                        st.dataframe(produtos, use_container_width=True)
+                    # 4. EXIBIÇÃO DOS DADOS
+                    if resultados_finais:
+                        st.success(f"✅ Encontramos {len(resultados_finais)} correspondências para '{item_alvo}'!")
+                        st.dataframe(resultados_finais, use_container_width=True)
                     else:
-                        st.warning("Não conseguimos identificar os produtos. O layout pode ser muito diferente.")
-                        
+                        st.error(f"❌ O item '{item_alvo}' não foi encontrado em nenhuma das categorias mapeadas.")
+
             except Exception as e:
-                st.error(f"❌ Ocorreu um erro na extração: {e}")
-    else:
-        st.warning("Por favor, cole um link antes de buscar.")
+                st.error(f"Falha técnica no motor: {e}")
